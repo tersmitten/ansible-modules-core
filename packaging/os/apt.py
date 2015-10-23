@@ -34,10 +34,10 @@ options:
     default: null
   state:
     description:
-      - Indicates the desired package state. C(latest) ensures that the latest version is installed. C(build-dep) ensures the package build dependencies are installed.
+      - Indicates the desired package state. C(latest) ensures that the latest version is installed. C(build-dep) ensures the package build dependencies are installed. C(clean)
     required: false
     default: present
-    choices: [ "latest", "absent", "present", "build-dep" ]
+    choices: [ "latest", "absent", "present", "build-dep", "clean" ]
   update_cache:
     description:
       - Run the equivalent of C(apt-get update) before the operation. Can be run as part of the package installation or as a separate step.
@@ -537,10 +537,32 @@ def upgrade(m, mode="yes", force=False, default_release=None,
         m.exit_json(changed=False, msg=out, stdout=out, stderr=err)
     m.exit_json(changed=True, msg=out, stdout=out, stderr=err)
 
+def clean(m, dpkg_options=expand_dpkg_options(DPKG_OPTIONS)):
+    if m.check_mode:
+        check_arg = '--simulate'
+    else:
+        check_arg = ''
+
+    # apt-get clean
+    apt_cmd = APT_GET_CMD
+    clean_command = "clean"
+
+    apt_cmd_path = m.get_bin_path(apt_cmd, required=True)
+
+    for (k,v) in APT_ENV_VARS.iteritems():
+        os.environ[k] = v
+
+    cmd = '%s -y %s %s %s' % (apt_cmd_path, dpkg_options, check_arg, clean_command)
+
+    rc, out, err = m.run_command(cmd)
+    if rc:
+        m.fail_json(msg="'%s %s' failed: %s" % (apt_cmd, clean_command, err), stdout=out)
+    m.exit_json(changed=True, msg=out, stdout=out, stderr=err)
+
 def main():
     module = AnsibleModule(
         argument_spec = dict(
-            state = dict(default='present', choices=['installed', 'latest', 'removed', 'absent', 'present', 'build-dep']),
+            state = dict(default='present', choices=['installed', 'latest', 'removed', 'absent', 'present', 'build-dep', 'clean']),
             update_cache = dict(default=False, aliases=['update-cache'], type='bool'),
             cache_valid_time = dict(type='int'),
             purge = dict(default=False, type='bool'),
@@ -636,6 +658,9 @@ def main():
             updated_cache_time = 0
 
         force_yes = p['force']
+
+        if p['state'] == 'clean':
+            clean(module, dpkg_options)
 
         if p['upgrade']:
             upgrade(module, p['upgrade'], force_yes, p['default_release'], dpkg_options)
